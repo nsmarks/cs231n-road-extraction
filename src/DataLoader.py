@@ -37,6 +37,7 @@ class RoadsDataset():
 
 
             self.toTensor = transforms.ToTensor()
+            self.normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             
             metadata = pd.read_csv(root_dir + '/metadata.csv')
 
@@ -53,10 +54,13 @@ class RoadsDataset():
             # shuffle new unlabeled train
             train_metadata_unlabeled = train_metadata_unlabeled.sample(frac=1).reset_index(drop=True)
 
-            new_dataset_dir = '../data/deepglobe-dataset-pt'
+            new_dataset_dir = '../data/deepglobe-dataset-pt2'
+            print ('new_dataset_dir: ', new_dataset_dir)
+
+            print ('Creating train-labeled tensors...')
 
             # train-labeled
-            for index, labeled_train_elem in train_metadata_labeled[:3].iterrows():
+            for index, labeled_train_elem in train_metadata_labeled.iterrows():
                 image = Image.open(root_dir + '/' + labeled_train_elem['sat_image_path'])
                 # print ('image: ', image)
                 mask = Image.open(root_dir + '/' + labeled_train_elem['mask_path'])
@@ -74,21 +78,26 @@ class RoadsDataset():
                 torch.save(transformed_image, new_dataset_dir + '/train-labeled-sat/' + str(image_id) + '_sat.pt')
                 torch.save(one_hot_transformed_mask, new_dataset_dir + '/train-labeled-mask/' + str(image_id) + '_mask.pt')
 
+            print ('Creating train-unlabeled tensors...')
+
             # train-unlabeled
-            for index, unlabeled_train_elem in train_metadata_unlabeled[:3].iterrows():
+            for index, unlabeled_train_elem in train_metadata_unlabeled.iterrows():
                 image = Image.open(root_dir + '/' + unlabeled_train_elem['sat_image_path'])
                 transformed_image = augmentation([image])
                 image_id = unlabeled_train_elem['image_id']
                 torch.save(transformed_image, new_dataset_dir + '/train-unlabeled-sat/' + str(image_id) + '_sat.pt')
 
+            print ('Creating val tensors...')
+
             
             # val
-            for index, val_elem in new_val_metadata[:3].iterrows():
+            for index, val_elem in new_val_metadata.iterrows():
                 image = Image.open(root_dir + '/' + val_elem['sat_image_path'])
                 mask = Image.open(root_dir + '/' + val_elem['mask_path'])
 
                 # no augmentation, just to tensor
                 transformed_image = self.toTensor(image)
+                transformed_image = self.normalize(transformed_image)
                 transformed_mask = self.toTensor(mask)
 
                 one_hot_transformed_mask = self.one_hot_mask(transformed_mask)
@@ -98,14 +107,17 @@ class RoadsDataset():
                 torch.save(transformed_image, new_dataset_dir + '/val-sat/' + str(image_id) + '_sat.pt')
                 torch.save(one_hot_transformed_mask, new_dataset_dir + '/val-mask/' + str(image_id) + '_mask.pt')
 
+            print ('Creating test tensors...')
+
 
             # test
-            for index, test_elem in new_test_metadata[:3].iterrows():
+            for index, test_elem in new_test_metadata.iterrows():
                 image = Image.open(root_dir + '/' + test_elem['sat_image_path'])
                 mask = Image.open(root_dir + '/' + test_elem['mask_path'])
 
                 # no augmentation, just to tensor
                 transformed_image = self.toTensor(image)
+                transformed_image = self.normalize(transformed_image)
                 transformed_mask = self.toTensor(mask)
 
                 one_hot_transformed_mask = self.one_hot_mask(transformed_mask)
