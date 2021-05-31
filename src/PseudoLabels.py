@@ -11,7 +11,7 @@ from TransformedDataset import TransformedDataset
 
 # https://pytorch.org/tutorials/beginner/finetuning_torchvision_models_tutorial.html
 
-def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimizer, num_epochs):
+def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimizer, num_epochs, pseudo_ex_folder):
     since = time.time()
 
     val_iou_history = [] # track validation iou
@@ -106,6 +106,10 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
             for i in range(len(pseudo_labels)):
                 save_name = names[i][:-7] + '_pseudo_label.pt'
                 torch.save(pseudo_labels[i], '../data/deepglobe-dataset-pt/train-pseudo-labels/' + save_name)
+                # save progression examples of pseudo labels
+                if (save_name == '39512_pseudo_label.pt' or save_name == '74091_pseudo_label.pt'):
+                    ex_save_name = save_name[:5] + '_epoch' + str(epoch) + '.pt'
+                    torch.save(pseudo_labels[i], pseudo_ex_folder + '/' + ex_save_name)
 
         train_unlabeled_dataset.has_labels = True
         train_unlabeled_dataset.return_name = False
@@ -294,14 +298,23 @@ optimizer = optim.Adam(params_to_update) # not messing with hyperparams for base
 weight = torch.Tensor([1, 15]).to(device) # try to fix the imbalance of background vs road
 loss_func = nn.CrossEntropyLoss(weight=weight)
 
-# train and evaluate
-best_model, history = train_model(model, dataloader_dict, train_unlabeled_dataset, loss_func, optimizer, num_epochs=num_epochs)
+
 
 
 num_files = len(os.listdir('../save/Pseudo/'))
-os.mkdir('../save/Pseudo/pseudo' + str(num_files))
-torch.save(best_model.state_dict(), '../save/Pseudo/pseudo' + str(num_files) + '/model_statedict.pt')
-w = csv.writer(open('../save/Pseudo/baseline' + str(num_files) + '/history.csv', 'w'))
+save_folder = '../save/Pseudo/pseudo' + str(num_files)
+pseudo_ex_folder = save_folder + '/pseudo-ex'
+os.mkdir(save_folder)
+os.mkdir(pseudo_ex_folder)
+
+
+# train and evaluate
+best_model, history = train_model(model, dataloader_dict, train_unlabeled_dataset, loss_func, optimizer, num_epochs=num_epochs, pseudo_ex_folder=pseudo_ex_folder)
+
+
+
+torch.save(best_model.state_dict(), save_folder + '/model_statedict.pt')
+w = csv.writer(open(save_folder + '/history.csv', 'w'))
 for key, val in history.items():
     w.writerow([key, val])
 
