@@ -11,24 +11,108 @@ from TransformedDataset import TransformedDataset
 
 # https://pytorch.org/tutorials/beginner/finetuning_torchvision_models_tutorial.html
 
-def train_model(model, dataloaders, loss_func, optimizer, num_epochs):
+def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimizer, num_epochs):
     since = time.time()
 
     val_iou_history = [] # track validation iou
     val_loss_history = []
-    train_iou_history = []
-    train_loss_history = []
+    train_labeled_iou_history = []
+    train_labeled_loss_history = []
+    train_unlabeled_iou_history = []
+    train_unlabeled_loss_history = []
 
     best_model_wts = copy.deepcopy(model.state_dict())
     best_iou = 0
 
-    for epoch in range(num_epochs):
+    
+    # epoch 0:
+    print ('Epoch 0 of ', num_epochs - 1, '. Training using only labeled train data.')
+    print ('**************************************************************************')
+    for phase in ['train-labeled', 'val']: # epoch trains and then checks val
+        if phase == 'train-labeled':
+            model.train() # set model to training mode: will update weights
+        else: # phase == 'val'
+            model.eval() # model won't update weights
+
+        running_loss = 0.0
+        runningIoU = 0.0
+        # iterate over data
+        for inputs, labels in dataloaders[phase]:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+
+            # zero param gradients
+            optimizer.zero_grad()
+
+            # forward pass - only track history in train
+            with torch.set_grad_enabled(phase == 'train-labeled'):
+                outputs = model(inputs)
+                final_outputs = outputs['out']
+                # TODO --------------------------------------------------------------------------- TODO some sort of output visualizations
+                loss = loss_func(final_outputs, labels)
+                print (phase, ' loss: ', loss)
+
+                # compute final predictions
+                predictions = torch.argmax(final_outputs, dim=1)
+                # print ('torch.sum(predictions): ', torch.sum(predictions))
+
+                IoU = computeIoU(predictions, labels)
+                # print ('IoU: ', IoU)
+                runningIoU += IoU
+
+                # backward and optimize in train phase
+                if (phase == 'train-labeled'):
+                    loss.backward()
+                    optimizer.step()
+
+            running_loss += loss.item() * inputs.size(0) # ------------------------------------- not incredibly sure
+    
+        # end of phase in epoch 0:
+        epoch_loss = running_loss / len(dataloaders[phase].dataset)
+        epoch_iou = runningIoU / len(dataloaders[phase].dataset)
+        print (phase, ' Loss: ', epoch_loss, "\t IoU: ", epoch_iou) # -------------------- IoU
+
+        # copy model if best
+        if phase == 'val' and epoch_iou > best_iou:
+            best_iou = epoch_iou
+            best_model_wts = copy.deepcopy(model.state_dict())
+        if phase == 'val':
+            val_iou_history.append(epoch_iou)
+            val_loss_history.append(epoch_loss)
+        if phase == 'train-labeled':
+            train_labeled_iou_history.append(epoch_iou)
+            train_labeled_loss_history.append(epoch_loss)
+            train_unlabeled_iou_history.append(0) # we don't use unlabeled data in epoch 0
+            train_unlabeled_loss_history.append(0)
+
+    # end of epoch 0
+    
+    
+
+    # epoch 1 - 9:
+    for epoch in range(1, num_epochs):
         print ()
         print ('Epoch ', epoch, ' of ', num_epochs - 1)
-        print ('****************************************')
+        print ('**************************************************************************')
+        # create pseudo labels by passing train_unlabeled through model
+        train_unlabeled_dataset.has_labels = False
+        train_unlabeled_dataset.return_name = True
+        train_unlabeled_dataloader = torch.utils.data.DataLoader(train_unlabeled_dataset, batch_size=8, shuffle=False, num_workers=2)
+        for inputs, names in train_unlabeled_dataloader:
+            # print ('inputs: ', inputs)
+            inputs = inputs[0].to(device)
+            final_outputs = model(inputs)['out']
+            pseudo_labels = torch.argmax(final_outputs, dim=1)
+            for i in range(len(pseudo_labels)):
+                save_name = names[i][:-7] + '_pseudo_label.pt'
+                torch.save(pseudo_labels[i], '../data/deepglobe-dataset-pt/train-pseudo-labels/' + save_name)
 
-        for phase in ['train', 'val']: # each epoch trains and then checks val
-            if phase == 'train':
+        train_unlabeled_dataset.has_labels = True
+        train_unlabeled_dataset.return_name = False
+        dataloaders['train-unlabeled'] = torch.utils.data.DataLoader(train_unlabeled_dataset, batch_size=8, shuffle=True, num_workers=2)
+
+        for phase in ['train-labeled', 'train-unlabeled', 'val']: # each epoch trains and then checks val
+            if phase == 'train-labeled' or phase == 'train-unlabeled':
                 model.train() # set model to training mode: will update weights
             else: # phase == 'val'
                 model.eval() # model won't update weights
@@ -37,7 +121,6 @@ def train_model(model, dataloaders, loss_func, optimizer, num_epochs):
             runningIoU = 0.0
             # iterate over data
             for inputs, labels in dataloaders[phase]:
-                print ('inputs: ', inputs)
                 inputs = inputs.to(device)
                 labels = labels.to(device)
                 # print ('got inputs and labels')
@@ -48,7 +131,7 @@ def train_model(model, dataloaders, loss_func, optimizer, num_epochs):
                 optimizer.zero_grad()
 
                 # forward pass - only track history in train
-                with torch.set_grad_enabled(phase == 'train'):
+                with torch.set_grad_enabled(phase == 'train-labeled' or phase == 'train-unlabeled'):
                     outputs = model(inputs)
                     # print ('got outputs')
                     # print ('outputs: ', outputs)
@@ -56,28 +139,27 @@ def train_model(model, dataloaders, loss_func, optimizer, num_epochs):
                     final_outputs = outputs['out']
                     # TODO --------------------------------------------------------------------------- TODO some sort of output visualizations
                     loss = loss_func(final_outputs, labels)
-                    print (phase, ' loss: ', loss)
-                    # print ('got loss')
+                    # print (phase, ' loss: ', loss)
 
                     # compute final predictions
                     predictions = torch.argmax(final_outputs, dim=1)
-                    print ('torch.sum(predictions): ', torch.sum(predictions))
+                    # print ('torch.sum(predictions): ', torch.sum(predictions))
 
                     IoU = computeIoU(predictions, labels)
-                    print ('IoU: ', IoU)
+                    # print ('IoU: ', IoU)
                     runningIoU += IoU
 
                     # _, preds = torch.max(outpus, 1) # ---- unclear what this does - do we need it?
 
                     # backward and optimize in train phase
-                    if (phase == 'train'):
+                    if (phase == 'train-labeled' or phase == 'train-unlabeled'):
                         #print ('Entering backward')
                         loss.backward()
                         #print ('Optimizer step')
                         optimizer.step()
 
                 running_loss += loss.item() * inputs.size(0) # ------------------------------------- not incredibly sure
-            
+
             epoch_loss = running_loss / len(dataloaders[phase].dataset)
             epoch_iou = runningIoU / len(dataloaders[phase].dataset)
             print (phase, ' Loss: ', epoch_loss, "\t IoU: ", epoch_iou) # -------------------- IoU
@@ -89,9 +171,12 @@ def train_model(model, dataloaders, loss_func, optimizer, num_epochs):
             if phase == 'val':
                 val_iou_history.append(epoch_iou)
                 val_loss_history.append(epoch_loss)
-            if phase == 'train':
-                train_iou_history.append(epoch_iou)
-                train_loss_history.append(epoch_loss)
+            elif phase == 'train-labeled':
+                train_labeled_iou_history.append(epoch_iou)
+                train_labeled_loss_history.append(epoch_loss)
+            elif phase == 'train-unlabeled':
+                train_unlabeled_iou_history.append(epoch_iou)
+                train_unlabeled_loss_history.append(epoch_loss)
         # at end of epoch, check for early stopping
         if (epoch > 3):
             recent_loss = val_loss_history[-1]
@@ -100,12 +185,11 @@ def train_model(model, dataloaders, loss_func, optimizer, num_epochs):
                 break
 
 
-
     print()
 
     time_elapsed = time.time() - since
     print ('time_elapsed: ', time_elapsed)
-    print ('Training complete in ', time_elapsed // 3600, ' hr, ', time_elapsed // 60, ' min, ', time_elapsed % 60, ' sec')
+    print ('Training complete in ', time_elapsed // 60, ' min, ', time_elapsed % 60, ' sec')
     print ('Best val IoU: ', best_iou)
 
     # load best model weights
@@ -113,10 +197,13 @@ def train_model(model, dataloaders, loss_func, optimizer, num_epochs):
     history = {
         'val_iou': val_iou_history,
         'val_loss': val_loss_history,
-        'train_iou': train_iou_history,
-        'train_loss': train_loss_history
+        'train_labeled_iou': train_labeled_iou_history,
+        'train_labeled_loss': train_labeled_loss_history,
+        'train_unlabeled_iou': train_unlabeled_iou_history,
+        'train_unlabeled_loss': train_unlabeled_loss_history
     }
     return model, history
+
 # end train_model
 
 def computeIoU(output, label):
@@ -140,8 +227,6 @@ def computeIoU(output, label):
     totalIoU = (roadIoU + backgroundIoU) / 2
 
     return totalIoU
-
-
 
 
 
@@ -181,11 +266,13 @@ print ('Initializing datasets and dataloaders...')
 # create datasets
 train_labeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-labeled-sat', '../data/deepglobe-dataset-pt/train-labeled-mask')
 val_dataset = TransformedDataset('../data/deepglobe-dataset-pt/val-sat', '../data/deepglobe-dataset-pt/val-mask')
+train_unlabeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-unlabeled-sat', '../data/deepglobe-dataset-pt/train-pseudo-labels', has_labels=False, return_name=True)
 
 # create dataloaders
 train_dataloader = torch.utils.data.DataLoader(train_labeled_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
 val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
-dataloader_dict = {'train': train_dataloader, 'val': val_dataloader}
+# we'll create the train_unlabeled_dataloader during training
+dataloader_dict = {'train-labeled': train_dataloader, 'val': val_dataloader}
 
 
 # create the optimizer
@@ -208,13 +295,13 @@ weight = torch.Tensor([1, 15]).to(device) # try to fix the imbalance of backgrou
 loss_func = nn.CrossEntropyLoss(weight=weight)
 
 # train and evaluate
-best_model, history = train_model(model, dataloader_dict, loss_func, optimizer, num_epochs=num_epochs)
+best_model, history = train_model(model, dataloader_dict, train_unlabeled_dataset, loss_func, optimizer, num_epochs=num_epochs)
 
 
-num_files = len(os.listdir('../save/Baseline/'))
-os.mkdir('../save/Baseline/baseline' + str(num_files))
-torch.save(best_model.state_dict(), '../save/Baseline/baseline' + str(num_files) + '/model_statedict.pt')
-w = csv.writer(open('../save/Baseline/baseline' + str(num_files) + '/history.csv', 'w'))
+num_files = len(os.listdir('../save/Pseudo/'))
+os.mkdir('../save/Pseudo/pseudo' + str(num_files))
+torch.save(best_model.state_dict(), '../save/Pseudo/pseudo' + str(num_files) + '/model_statedict.pt')
+w = csv.writer(open('../save/Pseudo/baseline' + str(num_files) + '/history.csv', 'w'))
 for key, val in history.items():
     w.writerow([key, val])
 

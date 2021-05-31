@@ -4,10 +4,12 @@ import os
 # inspiration taken from https://medium.com/codex/saving-and-loading-transformed-image-tensors-in-pytorch-f37b4daa9658
 
 class TransformedDataset(torch.utils.data.Dataset):
-    def __init__(self, img, mask):
+    def __init__(self, img, mask, has_labels=True, return_name=False):
         self.img = img  #img path
         self.mask = mask  #mask path
         self.len = 0
+        self.has_labels = has_labels
+        self.return_name = return_name
         with os.scandir(self.img) as it:
             for entry in it:
                 if not entry.name.startswith('.'): # don't count hidden files
@@ -39,7 +41,7 @@ class TransformedDataset(torch.utils.data.Dataset):
             
 
 
-        if (self.mask is not None):
+        if (self.has_labels):
             ls_mask = sorted(os.listdir(self.mask))
             toRemove = []
             for elem in ls_mask:
@@ -64,14 +66,23 @@ class TransformedDataset(torch.utils.data.Dataset):
         # print ('img_file_path: ', img_file_path)
         img_tensor = torch.load(img_file_path)
 
-        if (self.mask is not None):
+        if (self.has_labels):
             mask_file_path = os.path.join(self.mask, ls_mask[index])
             mask_tensor = torch.load(mask_file_path)
 
-        if (self.mask is not None):
-            return img_tensor, mask_tensor
-        else:
-            return img_tensor
+
+        toReturn = [img_tensor]
+        if self.has_labels:
+            toReturn.append(mask_tensor)
+        if self.return_name:
+            toReturn.append(ls_img[index])
+        return tuple(toReturn)
+
+        
+        # if (self.has_labels):
+        #     return img_tensor, mask_tensor
+        # else:
+        #     return img_tensor, ls_img[index]
 
     def __len__(self):
         return self.len
