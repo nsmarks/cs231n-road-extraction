@@ -34,7 +34,8 @@ def train_model(model, dataloaders, loss_func, optimizer, num_epochs):
                 model.eval() # model won't update weights
 
             running_loss = 0.0 # -------------------------------------------------------------- what's this?
-            running_corrects = 0 # ------------------------------------------------------------not sure we need exactly this
+
+            # TODO TODO TODO running iou
 
             # iterate over data
             for inputs, labels in dataloaders[phase]:
