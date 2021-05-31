@@ -34,14 +34,12 @@ def train_model(model, dataloaders, loss_func, optimizer, num_epochs):
                 model.eval() # model won't update weights
 
             running_loss = 0.0 # -------------------------------------------------------------- what's this?
-
-            # TODO TODO TODO running iou
-
+            runningIoU = 0.0
             # iterate over data
             for inputs, labels in dataloaders[phase]:
                 inputs = inputs.to(device)
                 labels = labels.to(device)
-                print ('got inputs and labels')
+                # print ('got inputs and labels')
                 # print ('labels: ', labels)
                 # print ('type(labels): ', type(labels))
 
@@ -51,32 +49,36 @@ def train_model(model, dataloaders, loss_func, optimizer, num_epochs):
                 # forward pass - only track history in train
                 with torch.set_grad_enabled(phase == 'train'):
                     outputs = model(inputs)
-                    print ('got outputs')
+                    # print ('got outputs')
                     # print ('outputs: ', outputs)
                     # print ('type(outputs): ', type(outputs))
                     final_outputs = outputs['out']
                     # TODO --------------------------------------------------------------------------- TODO some sort of output visualizations
                     loss = loss_func(final_outputs, labels)
-                    print ('got loss')
+                    print (phase, ' loss: ', loss)
+                    # print ('got loss')
 
                     # compute final predictions
                     predictions = torch.argmax(final_outputs, dim=1)
+                    print ('torch.sum(predictions): ', torch.sum(predictions))
 
                     IoU = computeIoU(predictions, labels)
+                    print ('IoU: ', IoU)
+                    runningIoU += IoU
 
                     # _, preds = torch.max(outpus, 1) # ---- unclear what this does - do we need it?
 
                     # backward and optimize in train phase
                     if (phase == 'train'):
-                        print ('Entering backward')
+                        #print ('Entering backward')
                         loss.backward()
-                        print ('Optimizer step')
+                        #print ('Optimizer step')
                         optimizer.step()
 
                 running_loss += loss.item() * inputs.size(0) # ------------------------------------- not incredibly sure
             
             epoch_loss = running_loss / len(dataloaders[phase].dataset)
-            epoch_iou = IoU / len(dataloaders[phase].dataset)
+            epoch_iou = runningIoU / len(dataloaders[phase].dataset)
             print (phase, ' Loss: ', epoch_loss, "\t IoU: ", epoch_iou) # -------------------- IoU
 
             # copy model if best
@@ -89,6 +91,14 @@ def train_model(model, dataloaders, loss_func, optimizer, num_epochs):
             if phase == 'train':
                 train_iou_history.append(epoch_iou)
                 train_loss_history.append(epoch_loss)
+        # at end of epoch, check for early stopping
+        if (epoch > 3):
+            recent_loss = val_loss_history[-1]
+            if (recent_loss > val_loss_history[-2] and recent_loss > val_loss_history[-3] and recent_loss > val_loss_history[-4]):
+                print ('Stopping early!')
+                break
+
+
 
     print()
 
@@ -168,12 +178,12 @@ model.to(device)
 
 print ('Initializing datasets and dataloaders...')
 # create datasets
-train_labeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-labeled-sat', '../data/deepglobe-dataset-pt/train-labeled-mask')
-val_dataset = TransformedDataset('../data/deepglobe-dataset-pt/val-sat', '../data/deepglobe-dataset-pt/val-mask')
+train_labeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt2/train-labeled-sat', '../data/deepglobe-dataset-pt2/train-labeled-mask')
+val_dataset = TransformedDataset('../data/deepglobe-dataset-pt2/val-sat', '../data/deepglobe-dataset-pt2/val-mask')
 
 # create dataloaders
-train_dataloader = torch.utils.data.DataLoader(train_labeled_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+train_dataloader = torch.utils.data.DataLoader(train_labeled_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
+val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
 dataloader_dict = {'train': train_dataloader, 'val': val_dataloader}
 
 
@@ -193,12 +203,12 @@ else: # not features_extract
 optimizer = optim.Adam(params_to_update) # not messing with hyperparams for baseline
 
 # set up loss function
-loss_func = nn.CrossEntropyLoss()
+weight = torch.Tensor([1, 15]).to(device) # try to fix the imbalance of background vs road
+loss_func = nn.CrossEntropyLoss(weight=weight)
 
 # train and evaluate
 best_model, history = train_model(model, dataloader_dict, loss_func, optimizer, num_epochs=num_epochs)
 
-# TODO: save model and history ---------------------------------------------------------------------------------------------------------
 
 num_files = len(os.listdir('../save/Baseline/'))
 os.mkdir('../save/Baseline/baseline' + str(num_files))
