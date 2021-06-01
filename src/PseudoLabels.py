@@ -127,7 +127,10 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
             runningIoU = 0.0
             # iterate over data
             for inputs, info in dataloaders[phase]:
-                inputs = inputs.to(device)
+                if (phase == 'train-unlabeled'):
+                    inputs = inputs[0].to(device) # not entirely sure why it's stored in a list of len one in this case
+                else:
+                    inputs = inputs.to(device)
                 if (phase == 'train-labeled' or phase == 'val'):
                     labels = info
                     labels = labels.to(device)
