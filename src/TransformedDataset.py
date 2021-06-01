@@ -4,7 +4,7 @@ import os
 # inspiration taken from https://medium.com/codex/saving-and-loading-transformed-image-tensors-in-pytorch-f37b4daa9658
 
 class TransformedDataset(torch.utils.data.Dataset):
-    def __init__(self, img, mask, has_labels=True, return_name=False):
+    def __init__(self, img, mask, has_labels=True, return_name=False, small_set=False):
         self.img = img  #img path
         self.mask = mask  #mask path
         self.len = 0
@@ -14,6 +14,8 @@ class TransformedDataset(torch.utils.data.Dataset):
             for entry in it:
                 if not entry.name.startswith('.'): # don't count hidden files
                     self.len += 1
+                    if small_set and self.len == 8:
+                        break
 
 
         # self.len = len(os.listdir(self.img)) # one more than actually there? It might be picking up .DS_Store

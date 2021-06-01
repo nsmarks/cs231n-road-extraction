@@ -94,6 +94,7 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
         print ()
         print ('Epoch ', epoch, ' of ', num_epochs - 1)
         print ('**************************************************************************')
+        '''
         # create pseudo labels by passing train_unlabeled through model
         train_unlabeled_dataset.has_labels = False
         train_unlabeled_dataset.return_name = True
@@ -110,10 +111,11 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
                 if (save_name == '39512_pseudo_label.pt' or save_name == '74091_pseudo_label.pt'):
                     ex_save_name = save_name[:5] + '_epoch' + str(epoch) + '.pt'
                     torch.save(pseudo_labels[i], pseudo_ex_folder + '/' + ex_save_name)
+        '''
 
-        train_unlabeled_dataset.has_labels = True
-        train_unlabeled_dataset.return_name = False
-        dataloaders['train-unlabeled'] = torch.utils.data.DataLoader(train_unlabeled_dataset, batch_size=8, shuffle=True, num_workers=2)
+        # train_unlabeled_dataset.has_labels = True
+        # train_unlabeled_dataset.return_name = False
+        # dataloaders['train-unlabeled'] = torch.utils.data.DataLoader(train_unlabeled_dataset, batch_size=8, shuffle=True, num_workers=2)
 
         for phase in ['train-labeled', 'train-unlabeled', 'val']: # each epoch trains and then checks val
             if phase == 'train-labeled' or phase == 'train-unlabeled':
@@ -121,12 +123,23 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
             else: # phase == 'val'
                 model.eval() # model won't update weights
 
-            running_loss = 0.0 # -------------------------------------------------------------- what's this?
+            running_loss = 0.0
             runningIoU = 0.0
             # iterate over data
-            for inputs, labels in dataloaders[phase]:
+            for inputs, info in dataloaders[phase]:
                 inputs = inputs.to(device)
-                labels = labels.to(device)
+                if (phase == 'train-labeled' or phase == 'val'):
+                    labels = info
+                    labels = labels.to(device)
+                else: # train-unlabeled
+                    names = info
+                    outputs = model(inputs)['out']
+                    labels = torch.argmax(outputs, dim=1) # pseudo labels
+                    # save progression examples of pseudo labels
+                    for i in range(len(labels)):
+                        if names[i] == '39512_sat.pt' or names[i] == '74091_sat.pt':
+                            ex_save_name = names[i][:5] + '_epoch' + str(epoch) + '.pt'
+                            torch.save(labels[i], pseudo_ex_folder + '/' + ex_save_name)
                 # print ('got inputs and labels')
                 # print ('labels: ', labels)
                 # print ('type(labels): ', type(labels))
@@ -134,7 +147,7 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
                 # zero param gradients
                 optimizer.zero_grad()
 
-                # forward pass - only track history in train
+                # forward pass
                 with torch.set_grad_enabled(phase == 'train-labeled' or phase == 'train-unlabeled'):
                     outputs = model(inputs)
                     # print ('got outputs')
@@ -142,6 +155,7 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
                     # print ('type(outputs): ', type(outputs))
                     final_outputs = outputs['out']
                     # TODO --------------------------------------------------------------------------- TODO some sort of output visualizations
+
                     loss = loss_func(final_outputs, labels)
                     # print (phase, ' loss: ', loss)
 
@@ -273,10 +287,11 @@ val_dataset = TransformedDataset('../data/deepglobe-dataset-pt/val-sat', '../dat
 train_unlabeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-unlabeled-sat', '../data/deepglobe-dataset-pt/train-pseudo-labels', has_labels=False, return_name=True)
 
 # create dataloaders
-train_dataloader = torch.utils.data.DataLoader(train_labeled_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
+train_labeled_dataloader = torch.utils.data.DataLoader(train_labeled_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
 val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
-# we'll create the train_unlabeled_dataloader during training
-dataloader_dict = {'train-labeled': train_dataloader, 'val': val_dataloader}
+train_unlabeled_dataloader =  torch.utils.data.DataLoader(train_unlabeled_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
+
+dataloader_dict = {'train-labeled': train_labeled_dataloader, 'val': val_dataloader, 'train-unlabeled': train_unlabeled_dataloader}
 
 
 # create the optimizer
