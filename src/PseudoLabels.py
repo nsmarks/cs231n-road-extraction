@@ -26,71 +26,72 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
 
     
     # epoch 0:
-    print ('Epoch 0 of ', num_epochs - 1, '. Training using only labeled train data.')
-    print ('**************************************************************************')
-    for phase in ['train-labeled', 'val']: # epoch trains and then checks val
-        if phase == 'train-labeled':
-            model.train() # set model to training mode: will update weights
-        else: # phase == 'val'
-            model.eval() # model won't update weights
+    for epoch in range(3):
+        print ('Epoch ', epoch, ' of ', num_epochs - 1, '. Training using only labeled train data.')
+        print ('**************************************************************************')
+        for phase in ['train-labeled', 'val']: # epoch trains and then checks val
+            if phase == 'train-labeled':
+                model.train() # set model to training mode: will update weights
+            else: # phase == 'val'
+                model.eval() # model won't update weights
 
-        running_loss = 0.0
-        runningIoU = 0.0
-        # iterate over data
-        for inputs, labels in dataloaders[phase]:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
+            running_loss = 0.0
+            runningIoU = 0.0
+            # iterate over data
+            for inputs, labels in dataloaders[phase]:
+                inputs = inputs.to(device)
+                labels = labels.to(device)
 
-            # zero param gradients
-            optimizer.zero_grad()
+                # zero param gradients
+                optimizer.zero_grad()
 
-            # forward pass - only track history in train
-            with torch.set_grad_enabled(phase == 'train-labeled'):
-                outputs = model(inputs)
-                final_outputs = outputs['out']
-                # TODO --------------------------------------------------------------------------- TODO some sort of output visualizations
-                loss = loss_func(final_outputs, labels)
-                print (phase, ' loss: ', loss)
+                # forward pass - only track history in train
+                with torch.set_grad_enabled(phase == 'train-labeled'):
+                    outputs = model(inputs)
+                    final_outputs = outputs['out']
+                    # TODO --------------------------------------------------------------------------- TODO some sort of output visualizations
+                    loss = loss_func(final_outputs, labels)
+                    print (phase, ' loss: ', loss)
 
-                # compute final predictions
-                predictions = torch.argmax(final_outputs, dim=1)
-                # print ('torch.sum(predictions): ', torch.sum(predictions))
+                    # compute final predictions
+                    predictions = torch.argmax(final_outputs, dim=1)
+                    # print ('torch.sum(predictions): ', torch.sum(predictions))
 
-                IoU = computeIoU(predictions, labels)
-                # print ('IoU: ', IoU)
-                runningIoU += IoU
+                    IoU = computeIoU(predictions, labels)
+                    # print ('IoU: ', IoU)
+                    runningIoU += IoU
 
-                # backward and optimize in train phase
-                if (phase == 'train-labeled'):
-                    loss.backward()
-                    optimizer.step()
+                    # backward and optimize in train phase
+                    if (phase == 'train-labeled'):
+                        loss.backward()
+                        optimizer.step()
 
-            running_loss += loss.item() * inputs.size(0) # ------------------------------------- not incredibly sure
+                running_loss += loss.item() * inputs.size(0) # ------------------------------------- not incredibly sure
+        
+            # end of phase in epoch 0:
+            epoch_loss = running_loss / len(dataloaders[phase].dataset)
+            epoch_iou = runningIoU / len(dataloaders[phase].dataset)
+            print (phase, ' Loss: ', epoch_loss, "\t IoU: ", epoch_iou) # -------------------- IoU
+
+            # copy model if best
+            if phase == 'val' and epoch_iou > best_iou:
+                best_iou = epoch_iou
+                best_model_wts = copy.deepcopy(model.state_dict())
+            if phase == 'val':
+                val_iou_history.append(epoch_iou)
+                val_loss_history.append(epoch_loss)
+            if phase == 'train-labeled':
+                train_labeled_iou_history.append(epoch_iou)
+                train_labeled_loss_history.append(epoch_loss)
+                train_unlabeled_iou_history.append(0) # we don't use unlabeled data in epoch 0
+                train_unlabeled_loss_history.append(0)
+
+        # end of epoch 0
     
-        # end of phase in epoch 0:
-        epoch_loss = running_loss / len(dataloaders[phase].dataset)
-        epoch_iou = runningIoU / len(dataloaders[phase].dataset)
-        print (phase, ' Loss: ', epoch_loss, "\t IoU: ", epoch_iou) # -------------------- IoU
-
-        # copy model if best
-        if phase == 'val' and epoch_iou > best_iou:
-            best_iou = epoch_iou
-            best_model_wts = copy.deepcopy(model.state_dict())
-        if phase == 'val':
-            val_iou_history.append(epoch_iou)
-            val_loss_history.append(epoch_loss)
-        if phase == 'train-labeled':
-            train_labeled_iou_history.append(epoch_iou)
-            train_labeled_loss_history.append(epoch_loss)
-            train_unlabeled_iou_history.append(0) # we don't use unlabeled data in epoch 0
-            train_unlabeled_loss_history.append(0)
-
-    # end of epoch 0
-    
     
 
-    # epoch 1 - 9:
-    for epoch in range(1, num_epochs):
+    # epoch 3 - (num_epochs-1):
+    for epoch in range(3, num_epochs):
         print ()
         print ('Epoch ', epoch, ' of ', num_epochs - 1)
         print ('**************************************************************************')
@@ -268,7 +269,7 @@ def initialize_model(feature_extract, use_pretrained=True):
 
 
 batch_size = 8
-num_epochs = 10
+num_epochs = 15
 feature_extract = True # when False, finetune whole model. When True, only updated reshaped layer
 
 if torch.cuda.is_available():
