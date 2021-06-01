@@ -282,9 +282,9 @@ model.to(device)
 
 print ('Initializing datasets and dataloaders...')
 # create datasets
-train_labeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-labeled-sat', '../data/deepglobe-dataset-pt/train-labeled-mask')
-val_dataset = TransformedDataset('../data/deepglobe-dataset-pt/val-sat', '../data/deepglobe-dataset-pt/val-mask')
-train_unlabeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-unlabeled-sat', '../data/deepglobe-dataset-pt/train-pseudo-labels', has_labels=False, return_name=True)
+train_labeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-labeled-sat', '../data/deepglobe-dataset-pt/train-labeled-mask', small_set=True)
+val_dataset = TransformedDataset('../data/deepglobe-dataset-pt/val-sat', '../data/deepglobe-dataset-pt/val-mask', small_set=True)
+train_unlabeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-unlabeled-sat', '../data/deepglobe-dataset-pt/train-pseudo-labels', has_labels=False, return_name=True, small_set=True)
 
 # create dataloaders
 train_labeled_dataloader = torch.utils.data.DataLoader(train_labeled_dataset, batch_size=batch_size, shuffle=True, num_workers=2)

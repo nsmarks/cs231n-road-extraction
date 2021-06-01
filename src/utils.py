@@ -21,7 +21,7 @@ if (__name__ == '__main__'):
     NUM_EXAMPLES = 1
 
     # import model
-    model_weights = torch.load('../save/Baseline/baseline0/model_statedict.pt')
+    model_weights = torch.load('../save/Baseline/baseline1/model_statedict.pt')
     # print ('model: ', model)
     model = models.segmentation.fcn_resnet101(pretrained=True, progress=True)
     model.classifier[4] = nn.Conv2d(512, 2, kernel_size=(1,1), stride=(1,1))
@@ -32,7 +32,7 @@ if (__name__ == '__main__'):
     # grab a few examples to run through the model
     count = 0
     examples = []
-    with os.scandir('../data/deepglobe-dataset-pt2/train-labeled-sat') as it:
+    with os.scandir('../data/deepglobe-dataset-pt/train-labeled-sat') as it:
         for entry in it:
             if not entry.name.startswith('.'):
                 if (count == 10):
@@ -57,7 +57,7 @@ if (__name__ == '__main__'):
 
     # save them
     for example in examples:
-        tensor = torch.load('../data/deepglobe-dataset-pt2/train-labeled-sat/' + example).to(device)
+        tensor = torch.load('../data/deepglobe-dataset-pt/train-labeled-sat/' + example).to(device)
         '''
         output = model(tensor)
         output = output['out']
@@ -76,7 +76,7 @@ if (__name__ == '__main__'):
     output = torch.argmax(output, dim=1) * 255
     print ('torch.sum(output): ', torch.sum(output))
     #print ('output: ', output)
-   # plt.imsave('../save/Baseline/baseline0/example_outputs/example_output_' + examples[0] + '.png', output[0])
+    plt.imsave('../save/Baseline/baseline1/example_outputs/example_output_' + examples[0] + '.png', output[0])
     print ('saved via plt')
 
 
