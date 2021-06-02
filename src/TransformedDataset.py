@@ -14,7 +14,7 @@ class TransformedDataset(torch.utils.data.Dataset):
             for entry in it:
                 if not entry.name.startswith('.'): # don't count hidden files
                     self.len += 1
-                    if small_set and self.len == 8:
+                    if small_set and self.len == 2: # small len
                         break
 
 

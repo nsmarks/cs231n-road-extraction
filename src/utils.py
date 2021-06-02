@@ -1,11 +1,10 @@
 from torchvision.utils import save_image
-# import numpy as np
 import torch
 import os
 from torchvision import models
 import torch.nn as nn
-import numpy as np
-from PIL import Image
+# import numpy as np
+# from PIL import Image
 import matplotlib.pyplot as plt
 
 

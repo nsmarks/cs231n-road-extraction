@@ -7,12 +7,14 @@ import time
 import os
 import csv
 import RoadUtils
+from AdversarialModel import AdversarialModel
+import sys
 
 from TransformedDataset import TransformedDataset
 
 # https://pytorch.org/tutorials/beginner/finetuning_torchvision_models_tutorial.html
 
-def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimizer, num_epochs, pseudo_ex_folder):
+def train_model(model, dataloaders, seg_loss_func, discrim_loss_func, optimizer, num_epochs, num_labeled_only_epochs):
     since = time.time()
 
     val_iou_history = [] # track validation iou
@@ -25,9 +27,8 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
     best_model_wts = copy.deepcopy(model.state_dict())
     best_iou = 0
 
-    
-    # epoch 0:
-    for epoch in range(3):
+    # epoch 0 to (num_labeled_only_epochs-1):
+    for epoch in range(num_labeled_only_epochs):
         print ('Epoch ', epoch, ' of ', num_epochs - 1, '. Training using only labeled train data.')
         print ('**************************************************************************')
         for phase in ['train-labeled', 'val']: # epoch trains and then checks val
@@ -48,19 +49,20 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
 
                 # forward pass - only track history in train
                 with torch.set_grad_enabled(phase == 'train-labeled'):
-                    outputs = model(inputs)
-                    final_outputs = outputs['out']
+                    final_outputs = model(inputs, phase)
+                    # final_outputs = outputs['out']
                     # TODO --------------------------------------------------------------------------- TODO some sort of output visualizations
-                    loss = loss_func(final_outputs, labels)
+                    loss = seg_loss_func(final_outputs, labels)
                     print (phase, ' loss: ', loss)
 
                     # compute final predictions
                     predictions = torch.argmax(final_outputs, dim=1)
                     # print ('torch.sum(predictions): ', torch.sum(predictions))
 
-                    IoU = RoadUtils.computeIoU(predictions, labels)
+                    IoU = RoadUtils.computeIoU(predictions, labels) # individual IoU for each example in batch
+                    batchIoU = torch.sum(IoU)
                     # print ('IoU: ', IoU)
-                    runningIoU += IoU
+                    runningIoU += batchIoU
 
                     # backward and optimize in train phase
                     if (phase == 'train-labeled'):
@@ -87,39 +89,18 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
                 train_unlabeled_iou_history.append(0) # we don't use unlabeled data in epoch 0
                 train_unlabeled_loss_history.append(0)
 
-        # end of epoch 0
+        # end epochs of only labeled data
     
     
 
-    # epoch 3 - (num_epochs-1):
-    for epoch in range(3, num_epochs):
+    # epoch (num_labeled_only_epochs) - (num_epochs-1):
+    for epoch in range(num_labeled_only_epochs, num_epochs):
         print ()
-        print ('Epoch ', epoch, ' of ', num_epochs - 1)
+        print ('Epoch ', epoch, ' of ', num_epochs - 1, '. Using all data.')
         print ('**************************************************************************')
-        '''
-        # create pseudo labels by passing train_unlabeled through model
-        train_unlabeled_dataset.has_labels = False
-        train_unlabeled_dataset.return_name = True
-        train_unlabeled_dataloader = torch.utils.data.DataLoader(train_unlabeled_dataset, batch_size=8, shuffle=False, num_workers=2)
-        for inputs, names in train_unlabeled_dataloader:
-            # print ('inputs: ', inputs)
-            inputs = inputs[0].to(device)
-            final_outputs = model(inputs)['out']
-            pseudo_labels = torch.argmax(final_outputs, dim=1)
-            for i in range(len(pseudo_labels)):
-                save_name = names[i][:-7] + '_pseudo_label.pt'
-                torch.save(pseudo_labels[i], '../data/deepglobe-dataset-pt/train-pseudo-labels/' + save_name)
-                # save progression examples of pseudo labels
-                if (save_name == '39512_pseudo_label.pt' or save_name == '74091_pseudo_label.pt'):
-                    ex_save_name = save_name[:5] + '_epoch' + str(epoch) + '.pt'
-                    torch.save(pseudo_labels[i], pseudo_ex_folder + '/' + ex_save_name)
-        '''
-
-        # train_unlabeled_dataset.has_labels = True
-        # train_unlabeled_dataset.return_name = False
-        # dataloaders['train-unlabeled'] = torch.utils.data.DataLoader(train_unlabeled_dataset, batch_size=8, shuffle=True, num_workers=2)
 
         for phase in ['train-labeled', 'train-unlabeled', 'val']: # each epoch trains and then checks val
+
             if phase == 'train-labeled' or phase == 'train-unlabeled':
                 model.train() # set model to training mode: will update weights
             else: # phase == 'val'
@@ -133,47 +114,40 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
                     inputs = inputs[0].to(device) # not entirely sure why it's stored in a list of len one in this case
                 else:
                     inputs = inputs.to(device)
+
                 if (phase == 'train-labeled' or phase == 'val'):
                     labels = info
                     labels = labels.to(device)
-                else: # train-unlabeled
-                    names = info
-                    outputs = model(inputs)['out']
-                    labels = torch.argmax(outputs, dim=1) # pseudo labels
-                    # save progression examples of pseudo labels
-                    for i in range(len(labels)):
-                        if names[i] == '39512_sat.pt' or names[i] == '74091_sat.pt':
-                            ex_save_name = names[i][:5] + '_epoch' + str(epoch) + '.pt'
-                            torch.save(labels[i], pseudo_ex_folder + '/' + ex_save_name)
-                # print ('got inputs and labels')
-                # print ('labels: ', labels)
-                # print ('type(labels): ', type(labels))
+                
 
                 # zero param gradients
                 optimizer.zero_grad()
 
                 # forward pass
                 with torch.set_grad_enabled(phase == 'train-labeled' or phase == 'train-unlabeled'):
-                    outputs = model(inputs)
+                    final_outputs = model(inputs, phase)
                     # print ('got outputs')
                     # print ('outputs: ', outputs)
                     # print ('type(outputs): ', type(outputs))
-                    final_outputs = outputs['out']
+                    # final_outputs = outputs['out']
                     # TODO --------------------------------------------------------------------------- TODO some sort of output visualizations
 
-                    loss = loss_func(final_outputs, labels)
-                    # print (phase, ' loss: ', loss)
+                    if (phase == 'train-labeled' or phase == 'val'):
+                        loss = seg_loss_func(final_outputs, labels)
+                        # print (phase, ' loss: ', loss)
 
-                    # compute final predictions
-                    predictions = torch.argmax(final_outputs, dim=1)
-                    # print ('torch.sum(predictions): ', torch.sum(predictions))
+                        # compute final predictions
+                        predictions = torch.argmax(final_outputs, dim=1)
+                        # print ('torch.sum(predictions): ', torch.sum(predictions))
 
-                    IoU = RoadUtils.computeIoU(predictions, labels)
-                    # print ('IoU: ', IoU)
-                    runningIoU += IoU
-
-                    # _, preds = torch.max(outpus, 1) # ---- unclear what this does - do we need it?
-
+                        IoU = RoadUtils.computeIoU(predictions, labels) # individual IoU for each example in batch
+                        batchIoU = torch.sum(IoU)
+                        # print ('IoU: ', IoU)
+                        runningIoU += batchIoU
+                    else: # phase == 'train-unlabeled
+                        discrim_output, label_order = final_outputs
+                        loss = discrim_loss_func(discrim_output, label_order)
+                    
                     # backward and optimize in train phase
                     if (phase == 'train-labeled' or phase == 'train-unlabeled'):
                         #print ('Entering backward')
@@ -230,43 +204,24 @@ def train_model(model, dataloaders, train_unlabeled_dataset, loss_func, optimize
 # end train_model
 
 
-def set_parameter_requires_grad(model, feature_extracting):
-    if feature_extracting:
-        for param in model.parameters():
-            param.requires_grad = False
-
-def initialize_model(feature_extract, use_pretrained=True):
-    print ('Initializing model...')
-    model = models.segmentation.fcn_resnet101(pretrained=use_pretrained, progress=True) # --------------------------which model backbone?
-    set_parameter_requires_grad(model, feature_extract)
-    # set the number of classes from 21 to 2 (road and not road). All other params are same as default
-    model.classifier[4] = nn.Conv2d(512, 2, kernel_size=(1,1), stride=(1,1))
-    model.aux_classifier[4] = nn.Conv2d(256, 2, kernel_size=(1,1), stride=(1,1))
-    # print ('model: ', model)
-    return model
-
-
+num_labeled_only_epochs = 1
 batch_size = 8
-num_epochs = 15
+num_epochs = 10
 feature_extract = True # when False, finetune whole model. When True, only updated reshaped layer
 
 if torch.cuda.is_available():
-    print ('[INFO] Moving model and data to cuda')
+    print ('[INFO] Setting device to cuda')
     device = 'cuda'
 else:
     print ('[INFO] Cuda not available')
     device = 'cpu'
 
 
-model = initialize_model(feature_extract, use_pretrained=True)
-model.to(device)
-
-
 print ('Initializing datasets and dataloaders...')
 # create datasets
-train_labeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-labeled-sat', '../data/deepglobe-dataset-pt/train-labeled-mask')
-val_dataset = TransformedDataset('../data/deepglobe-dataset-pt/val-sat', '../data/deepglobe-dataset-pt/val-mask')
-train_unlabeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-unlabeled-sat', '../data/deepglobe-dataset-pt/train-pseudo-labels', has_labels=False, return_name=True)
+train_labeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-labeled-sat', '../data/deepglobe-dataset-pt/train-labeled-mask', small_set=True)
+val_dataset = TransformedDataset('../data/deepglobe-dataset-pt/val-sat', '../data/deepglobe-dataset-pt/val-mask', small_set=True)
+train_unlabeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-unlabeled-sat', '../data/deepglobe-dataset-pt/train-pseudo-labels', has_labels=False, return_name=True, small_set=True)
 
 # create dataloaders
 train_labeled_dataloader = torch.utils.data.DataLoader(train_labeled_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
@@ -276,7 +231,15 @@ train_unlabeled_dataloader =  torch.utils.data.DataLoader(train_unlabeled_datase
 dataloader_dict = {'train-labeled': train_labeled_dataloader, 'val': val_dataloader, 'train-unlabeled': train_unlabeled_dataloader}
 
 
-# create the optimizer
+if (sys.argv > 1):
+    load_weights_loc = sys.argv[1]
+else:
+    load_weights_loc = None
+
+model = AdversarialModel(feature_extract, train_labeled_dataloader, device, load_weights_loc)
+model.to(device)
+
+# create the optimizer ________________________________ TODO TODO must account for discriminator
 params_to_update = model.parameters()
 if (feature_extract):
     params_to_update = []
@@ -289,24 +252,25 @@ else: # not features_extract
         if param.requires_grad == True:
             print ('\t', name)
 
-optimizer = optim.Adam(params_to_update) # not messing with hyperparams for baseline
+optimizer = optim.Adam(params_to_update) # TODO: hyperparams
 
 # set up loss function
 weight = torch.Tensor([1, 15]).to(device) # try to fix the imbalance of background vs road
-loss_func = nn.CrossEntropyLoss(weight=weight)
+seg_loss_func = nn.CrossEntropyLoss(weight=weight)
+discrim_loss_func = nn.CrossEntropyLoss()
 
 
 
 
-num_files = len(os.listdir('../save/Pseudo/'))
-save_folder = '../save/Pseudo/pseudo' + str(num_files)
-pseudo_ex_folder = save_folder + '/pseudo-ex'
+num_files = len(os.listdir('../save/Adversarial/'))
+save_folder = '../save/Adversarial/adversarial' + str(num_files)
+# pseudo_ex_folder = save_folder + '/pseudo-ex'
 os.mkdir(save_folder)
-os.mkdir(pseudo_ex_folder)
+# os.mkdir(pseudo_ex_folder)
 
 
 # train and evaluate
-best_model, history = train_model(model, dataloader_dict, train_unlabeled_dataset, loss_func, optimizer, num_epochs=num_epochs, pseudo_ex_folder=pseudo_ex_folder)
+best_model, history = train_model(model, dataloader_dict, seg_loss_func, discrim_loss_func, optimizer, num_epochs=num_epochs, num_labeled_only_epochs=num_labeled_only_epochs)
 
 
 
