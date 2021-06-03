@@ -219,9 +219,9 @@ else:
 
 print ('Initializing datasets and dataloaders...')
 # create datasets
-train_labeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-labeled-sat', '../data/deepglobe-dataset-pt/train-labeled-mask', small_set=True)
-val_dataset = TransformedDataset('../data/deepglobe-dataset-pt/val-sat', '../data/deepglobe-dataset-pt/val-mask', small_set=True)
-train_unlabeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-unlabeled-sat', '../data/deepglobe-dataset-pt/train-pseudo-labels', has_labels=False, return_name=True, small_set=True)
+train_labeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-labeled-sat', '../data/deepglobe-dataset-pt/train-labeled-mask')
+val_dataset = TransformedDataset('../data/deepglobe-dataset-pt/val-sat', '../data/deepglobe-dataset-pt/val-mask')
+train_unlabeled_dataset = TransformedDataset('../data/deepglobe-dataset-pt/train-unlabeled-sat', '../data/deepglobe-dataset-pt/train-pseudo-labels', has_labels=False, return_name=True)
 
 # create dataloaders
 train_labeled_dataloader = torch.utils.data.DataLoader(train_labeled_dataset, batch_size=batch_size, shuffle=True, num_workers=2)
@@ -231,7 +231,7 @@ train_unlabeled_dataloader =  torch.utils.data.DataLoader(train_unlabeled_datase
 dataloader_dict = {'train-labeled': train_labeled_dataloader, 'val': val_dataloader, 'train-unlabeled': train_unlabeled_dataloader}
 
 
-if (sys.argv > 1):
+if (len(sys.argv) > 1):
     load_weights_loc = sys.argv[1]
 else:
     load_weights_loc = None
