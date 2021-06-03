@@ -45,7 +45,7 @@ test_dataset = TransformedDataset('../data/deepglobe-dataset-pt/test-sat', '../d
 # create dataloaders
 test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=2)
 
-if (sys.argv != 2):
+if (len(sys.argv) != 2):
     print ('Wrong usage. Give location of weights to load.')
 else:
     load_weights_loc = sys.argv[1]
