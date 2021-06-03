@@ -31,14 +31,14 @@ class AdversarialModel(nn.Module):
         if (phase in ['train-labeled', 'val', 'test']):
             return final_outputs
         else:
-            print ('entering train-unlabeled in AdversarialModel')
+            # print ('entering train-unlabeled in AdversarialModel')
             # we're in train-unlabeled, so apply adversarial discriminator to outputs
             # get random true labels from train-labeled
             generated_masks = torch.argmax(final_outputs, dim=1)
             num_outputs = final_outputs.shape[0]
             true_labels = []
             for _train_labeled_inputs, train_labeled_labels in self.train_labeled_dataloader:
-                print ('train_labeled_labels: ', train_labeled_labels)
+                # print ('train_labeled_labels: ', train_labeled_labels)
                 for train_labeled_label in train_labeled_labels:
                     train_labeled_label = train_labeled_label.to(self.device)
                     true_labels.append(train_labeled_label)
@@ -50,7 +50,7 @@ class AdversarialModel(nn.Module):
             ones = [1] * num_outputs # 1 means real mask
             label_order = (zeros + ones) # concatenate. This is label for discriminator
             random.shuffle(label_order)
-            print ('label_order: ', label_order)
+            # print ('label_order: ', label_order)
             masks_for_discriminator = []
             real_used = 0
             generated_used = 0
@@ -74,16 +74,20 @@ class AdversarialModel(nn.Module):
             batch1 = batch1.reshape(num_outputs, 1, 1024, 1024)
             batch2 = batch2.reshape(num_outputs, 1, 1024, 1024)
 
-            print ('batch1: ', batch1)
-            print ('batch2: ', batch2)
+            #print ('batch1: ', batch1)
+            #print ('batch2: ', batch2)
+
+            batch1 = batch1.to(self.device)
+            batch2 = batch2.to(self.device)
+
             adversarialOutput1 = self.realVsPseudoClassifier(batch1)
             adversarialOutput2 = self.realVsPseudoClassifier(batch2)
 
-            print ('adversarialOutput1: ', adversarialOutput1)
-            print ('adversarialOutput2: ', adversarialOutput2)
+            # print ('adversarialOutput1: ', adversarialOutput1)
+            # print ('adversarialOutput2: ', adversarialOutput2)
             output = torch.cat((adversarialOutput1, adversarialOutput2))
-            print ('output: ', output)
-            return output, torch.Tensor(label_order).long()
+            #print ('output: ', output)
+            return output, torch.Tensor(label_order).long().to(self.device)
 
 
 
